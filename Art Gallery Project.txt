@@ -1,0 +1,178 @@
+Step 4 — Enable Eureka Server
+
+Open your main class, probably:
+
+discovery-server/src/main/java/com/artgallery/discoveryserver/DiscoveryServerApplication.java
+
+Update it to:
+
+package com.artgallery.discoveryserver;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.netflix.eureka.server.EnableEurekaServer;
+
+@EnableEurekaServer
+@SpringBootApplication
+public class DiscoveryServerApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(DiscoveryServerApplication.class, args);
+    }
+}
+Step 5 — Configure application.properties
+
+Open:
+
+discovery-server/src/main/resources/application.properties
+
+Replace everything with:
+
+spring.application.name=discovery-server
+
+server.port=8761
+
+eureka.client.register-with-eureka=false
+eureka.client.fetch-registry=false
+
+
+
+
+
+
+Step 6 — Run it
+
+From Git Bash:
+
+cd ~/Documents/art-gallery-microservices/discovery-server
+./mvnw spring-boot:run
+
+Then open:
+
+http://localhost:8761
+
+You should see the Eureka dashboard.
+
+
+===============================================================
+
+Next
+Thought for a second
+
+Good. Now do a quick Git save before we create the next service.
+
+Step 7 — Commit discovery-server
+
+From Git Bash:
+
+cd ~/Documents/art-gallery-microservices
+git status
+
+Then:
+
+git add .
+git commit -m "Add discovery server"
+git push
+
+If git push fails because you have not connected GitHub yet, run:
+
+git remote -v
+Step 8 — Create the next service: api-gateway
+
+Go to Spring Initializr and create:
+
+Project: Maven
+Language: Java
+Spring Boot: 4.0.6
+Group: com.artgallery
+Artifact: api-gateway
+Name: api-gateway
+Package: com.artgallery.apigateway
+Java: 17
+
+Add dependencies:
+
+Gateway
+Eureka Discovery Client
+Spring Boot Actuator
+
+Download, unzip, and place it inside:
+
+art-gallery-microservices/
+└── api-gateway/
+
+Your folder should become:
+
+art-gallery-microservices/
+├── discovery-server/
+└── api-gateway/
+
+After that, send me the api-gateway pom.xml, and we’ll configure the gateway routes.
+
+
+=============================================================
+
+
+Now configure api-gateway.
+
+1. Open api-gateway/src/main/resources/application.properties
+
+Replace everything with:
+
+spring.application.name=api-gateway
+
+server.port=8080
+
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka
+
+spring.cloud.gateway.server.webflux.discovery.locator.enabled=true
+spring.cloud.gateway.server.webflux.discovery.locator.lower-case-service-id=true
+2. Make sure your main class is simple
+
+Open:
+
+api-gateway/src/main/java/com/artgallery/apigateway/ApiGatewayApplication.java
+
+It should look like:
+
+package com.artgallery.apigateway;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ApiGatewayApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(ApiGatewayApplication.class, args);
+    }
+}
+3. Run both services
+
+First terminal:
+
+cd ~/Documents/art-gallery-microservices/discovery-server
+./mvnw spring-boot:run
+
+Second terminal:
+
+cd ~/Documents/art-gallery-microservices/api-gateway
+./mvnw spring-boot:run
+4. Check Eureka
+
+Open:
+
+http://localhost:8761
+
+You should see:
+
+API-GATEWAY
+
+registered in Eureka.
+
+Then commit:
+
+cd ~/Documents/art-gallery-microservices
+git add .
+git commit -m "Add api gateway"
+git push
