@@ -176,3 +176,321 @@ cd ~/Documents/art-gallery-microservices
 git add .
 git commit -m "Add api gateway"
 git push
+
+
+
+
+===============================================================
+
+Next we create auth-service.
+
+1. Generate auth-service
+
+Spring Initializr settings:
+
+Project: Maven
+Language: Java
+Spring Boot: 4.0.6
+Group: com.artgallery
+Artifact: auth-service
+Name: auth-service
+Package: com.artgallery.authservice
+Java: 17
+
+Add dependencies:
+
+Spring Web
+Spring Security
+Spring Data JPA
+PostgreSQL Driver
+Eureka Discovery Client
+Validation
+Lombok
+Spring Boot Actuator
+
+Download, unzip, and place it here:
+
+art-gallery-microservices/
+├── discovery-server/
+├── api-gateway/
+└── auth-service/
+2. Then send me the auth-service/pom.xml
+
+After you send it, we’ll configure:
+
+server.port=8081
+Eureka registration
+PostgreSQL connection
+User entity
+Register endpoint
+Login endpoint
+JWT security
+
+
+==================================================================
+
+
+Next Step — Create the User Entity
+
+Inside auth-service, create package:
+
+com.artgallery.authservice.entity
+
+Then create:
+
+User.java
+
+with this code:
+
+package com.artgallery.authservice.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Table(name = "users")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class User {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String firstName;
+
+    private String lastName;
+
+    @Column(unique = true, nullable = false)
+    private String email;
+
+    private String password;
+
+    private String role;
+}
+Next — Create Repository
+
+Create package:
+
+com.artgallery.authservice.repository
+
+Create:
+
+UserRepository.java
+package com.artgallery.authservice.repository;
+
+import com.artgallery.authservice.entity.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.Optional;
+
+public interface UserRepository extends JpaRepository<User, Long> {
+
+    Optional<User> findByEmail(String email);
+}
+Then Run Again
+./mvnw spring-boot:run
+
+If everything is correct:
+
+Hibernate should automatically create:
+
+users
+
+table inside PostgreSQL.
+
+Verify in pgAdmin
+
+You should see:
+
+art_gallery_auth_db
+  -> Schemas
+      -> public
+          -> tables
+              -> users
+
+Once done, tell me:
+
+DONE
+
+and we’ll build:
+
+Register API
+DTOs
+Service layer
+Controller
+Password encryption
+
+
+
+=============================================================
+
+Done
+
+Excellent. Now we build the Register API.
+
+1. Create dto package
+com.artgallery.authservice.dto
+
+Create RegisterRequest.java:
+
+package com.artgallery.authservice.dto;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+
+@Data
+public class RegisterRequest {
+
+    @NotBlank
+    private String firstName;
+
+    @NotBlank
+    private String lastName;
+
+    @Email
+    @NotBlank
+    private String email;
+
+    @NotBlank
+    private String password;
+}
+2. Create service package
+com.artgallery.authservice.service
+
+Create AuthService.java:
+
+package com.artgallery.authservice.service;
+
+import com.artgallery.authservice.dto.RegisterRequest;
+import com.artgallery.authservice.entity.User;
+import com.artgallery.authservice.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    public String register(RegisterRequest request) {
+
+        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+            return "Email already exists";
+        }
+
+        User user = User.builder()
+                .firstName(request.getFirstName())
+                .lastName(request.getLastName())
+                .email(request.getEmail())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .role("USER")
+                .build();
+
+        userRepository.save(user);
+
+        return "User registered successfully";
+    }
+}
+3. Create config package
+com.artgallery.authservice.config
+
+Create SecurityConfig.java:
+
+package com.artgallery.authservice.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+public class SecurityConfig {
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
+        http
+                .csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/auth/register").permitAll()
+                        .anyRequest().authenticated()
+                );
+
+        return http.build();
+    }
+}
+4. Create controller package
+com.artgallery.authservice.controller
+
+Create AuthController.java:
+
+package com.artgallery.authservice.controller;
+
+import com.artgallery.authservice.dto.RegisterRequest;
+import com.artgallery.authservice.service.AuthService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/auth")
+@RequiredArgsConstructor
+public class AuthController {
+
+    private final AuthService authService;
+
+    @PostMapping("/register")
+    public String register(@Valid @RequestBody RegisterRequest request) {
+        return authService.register(request);
+    }
+}
+5. Run and test
+
+Start auth-service, then test with Postman:
+
+POST http://localhost:8081/api/auth/register
+
+Body:
+
+{
+  "firstName": "Gusto",
+  "lastName": "Eko",
+  "email": "gusto@example.com",
+  "password": "password123"
+}
+
+Expected response:
+
+User registered successfully
+-------------------------------------------------
+Excellent — registration works.
+
+Now commit this milestone:
+
+cd ~/Documents/art-gallery-microservices
+git add .
+git commit -m "Add auth service registration"
+git push
+
+Next we build:
+
+Login API
+JWT token generation
+JWT response
+
+After that, users will be able to register and log in securely.
