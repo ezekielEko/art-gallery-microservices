@@ -458,6 +458,13 @@ public class AuthController {
     public String register(@Valid @RequestBody RegisterRequest request) {
         return authService.register(request);
     }
+
+    @PostMapping("/login")
+    public AuthResponse login(@RequestBody LoginRequest request) {
+       return authService.login(request);
+}
+
+
 }
 5. Run and test
 
@@ -494,3 +501,363 @@ JWT token generation
 JWT response
 
 After that, users will be able to register and log in securely.
+
+
+====================================================================
+====================================================================
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Step 1 — Add JWT Dependencies
+
+Inside auth-service/pom.xml, add these dependencies:
+
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-api</artifactId>
+    <version>0.12.5</version>
+</dependency>
+
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-impl</artifactId>
+    <version>0.12.5</version>
+    <scope>runtime</scope>
+</dependency>
+
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-jackson</artifactId>
+    <version>0.12.5</version>
+    <scope>runtime</scope>
+</dependency>
+
+Then reload Maven.
+
+In IntelliJ:
+
+Maven → Reload Project
+
+OR from terminal:
+
+./mvnw clean install
+Step 2 — Create Login DTO
+
+Create:
+
+com.artgallery.authservice.dto.LoginRequest
+package com.artgallery.authservice.dto;
+
+import lombok.Data;
+
+@Data
+public class LoginRequest {
+
+    private String email;
+
+    private String password;
+}
+Step 3 — Create Auth Response DTO
+
+Create:
+
+com.artgallery.authservice.dto.AuthResponse
+package com.artgallery.authservice.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+
+@Data
+@AllArgsConstructor
+public class AuthResponse {
+
+    private String token;
+}
+Step 4 — Create JWT Service
+
+Create package:
+
+com.artgallery.authservice.security
+
+Create:
+
+JwtService.java
+package com.artgallery.authservice.security;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import org.springframework.stereotype.Service;
+
+import java.util.Date;
+
+@Service
+public class JwtService {
+
+    private static final String SECRET_KEY =
+            "mySuperSecretKeyForJwtAuthentication123456";
+
+    public String generateToken(String email) {
+
+        return Jwts.builder()
+                .subject(email)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 86400000))
+                .signWith(
+                        SignatureAlgorithm.HS256,
+                        SECRET_KEY.getBytes()
+                )
+                .compact();
+    }
+}
+Step 5 — Update AuthService
+
+Add:
+
+private final JwtService jwtService;
+
+Import:
+
+import com.artgallery.authservice.security.JwtService;
+import com.artgallery.authservice.dto.LoginRequest;
+import com.artgallery.authservice.dto.AuthResponse;
+
+Then add this method:
+
+public AuthResponse login(LoginRequest request) {
+
+    User user = userRepository.findByEmail(request.getEmail())
+            .orElseThrow(() ->
+                    new RuntimeException("Invalid email or password"));
+
+    if (!passwordEncoder.matches(
+            request.getPassword(),
+            user.getPassword())) {
+
+        throw new RuntimeException("Invalid email or password");
+    }
+
+    String token = jwtService.generateToken(user.getEmail());
+
+    return new AuthResponse(token);
+}
+Step 6 — Update Controller
+
+Add imports:
+
+import com.artgallery.authservice.dto.LoginRequest;
+import com.artgallery.authservice.dto.AuthResponse;
+
+Then add endpoint:
+
+@PostMapping("/login")
+public AuthResponse login(@RequestBody LoginRequest request) {
+    return authService.login(request);
+}
+Step 7 — Permit Login Endpoint
+
+Update SecurityConfig.java:
+
+.requestMatchers(
+        "/api/auth/register",
+        "/api/auth/login"
+).permitAll()
+Step 8 — Test Login
+
+Restart application.
+
+Then in Postman:
+
+POST http://localhost:8081/api/auth/login
+
+Body:
+
+{
+  "email": "gusto@example.com",
+  "password": "password123"
+}
+
+Expected response:
+
+{
+  "token": "eyJhbGciOiJIUzI1NiJ9..."
+}
+
+
+
+BUG SOLVED
+I have the following error when running the test:                                        .0.7]
+        ... 21 common frames omitted
+Caused by: java.lang.IllegalStateException: Can't configure requestMatchers after anyRequest
+        at org.springframework.util.Assert.state(Assert.java:80) ~[spring-core-7.0.7.jar:7.0.7]
+        at org.springframework.security.config.annotation.web.AbstractRequestMatcherRegistry.requestMatchers(AbstractRequestMatcherRegistry.java:146) ~[spring-security-config-7.0.5.jar:7.0.5]
+        at org.springframework.security.config.annotation.web.AbstractRequestMatcherRegistry.requestMatchers(AbstractRequestMatcherRegistry.java:195) ~[spring-security-config-7.0.5.jar:7.0.5]
+        at com.artgallery.authservice.config.SecurityConfig.lambda$securityFilterChain$3(SecurityConfig.java:29) ~[classes/:na]
+        at org.springframework.security.config.annotation.web.builders.HttpSecurity.authorizeHttpRequests(HttpSecurity.java:715) ~[spring-security-config-7.0.5.jar:7.0.5]
+        at com.artgallery.authservice.config.SecurityConfig.securityFilterChain(SecurityConfig.java:26) ~[classes/:na]
+        at com.artgallery.authservice.config.SecurityConfig$$SpringCGLIB$$0.CGLIB$securityFilterChain$1(<generated>) ~[classes/:na]
+        at com.artgallery.authservice.config.SecurityConfig$$SpringCGLIB$$FastClass$$1.invoke(<generated>) ~[classes/:na]
+        at org.springframework.cglib.proxy.MethodProxy.invokeSuper(MethodProxy.java:258) ~[spring-core-7.0.7.jar:7.0.7]
+        at org.springframework.context.annotation.ConfigurationClassEnhancer$BeanMethodInterceptor.intercept(ConfigurationClassEnhancer.java:398) ~[spring-context-7.0.7.jar:7.0.7]
+        at com.artgallery.authservice.config.SecurityConfig$$SpringCGLIB$$0.securityFilterChain(<generated>) ~[classes/:na]
+        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method) ~[na:na]
+        at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77) ~[na:na]
+        at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43) ~[na:na]
+        at java.base/java.lang.reflect.Method.invoke(Method.java:568) ~[na:na]
+        at org.springframework.beans.factory.support.SimpleInstantiationStrategy.lambda$instantiate$0(SimpleInstantiationStrategy.java:155) ~[spring-beans-7.0.7.jar:7.0.7]
+        ... 24 common frames omitted
+
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  11.569 s
+[INFO] Finished at: 2026-05-26T18:01:12-05:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:4.0.6:run (default-cli) on project auth-service: Process terminated with exit code: 1 -> [Help 1]
+[ERROR]
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR]
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException                                                                                              and here is the content of  SecurityConfig.java                                               package com.artgallery.authservice.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+public class SecurityConfig {
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
+        http
+                .csrf(csrf -> csrf.disable())
+                .httpBasic(httpBasic -> httpBasic.disable())
+                .formLogin(formLogin -> formLogin.disable())
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/auth/register").permitAll()
+                        .anyRequest().authenticated()
+                        .requestMatchers(
+                                "/api/auth/register", "/api/auth/login"
+
+                        ).permitAll()
+                );
+
+        return http.build();
+    }
+}
+
+Your issue is here:
+
+.anyRequest().authenticated()
+.requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+
+Once you write anyRequest(), Spring says: “all other rules are finished.” So you cannot add more requestMatchers after it.
+
+Replace your entire SecurityConfig.java with this:
+
+package com.artgallery.authservice.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+public class SecurityConfig {
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
+        http
+                .csrf(csrf -> csrf.disable())
+                .httpBasic(httpBasic -> httpBasic.disable())
+                .formLogin(formLogin -> formLogin.disable())
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(
+                                "/api/auth/register",
+                                "/api/auth/login"
+                        ).permitAll()
+                        .anyRequest().authenticated()
+                );
+
+        return http.build();
+    }
+}
+
+Then restart:
+
+cd ~/Documents/art-gallery-microservices/auth-service
+./mvnw spring-boot:run
+
+Rule to remember:
+
+Specific public endpoints first.
+anyRequest() always last.
+
+
+
+
+------------>
+Success!                                                              
+
+Excellent. You now have a real authentication system working:
+
+User Registration ✅
+Password Encryption ✅
+Database Persistence ✅
+Login Authentication ✅
+JWT Token Generation ✅
+Spring Security ✅
+Microservice Registration with Eureka ✅
+
+This is already the foundation of a production backend.
+
+Now commit this milestone:
+
+cd ~/Documents/art-gallery-microservices
+git add .
+git commit -m "Add JWT authentication"
+git push
+
+Next we will build:
+
+Next Major Feature
+JWT Request Filter
+
+This will allow:
+
+Protected APIs
+Authenticated users
+Role-based access
+Admin-only endpoints
+
+After that:
+
+Art Service
+Artwork upload
+Admin dashboard backend
+Image handling
+
+
+
+
+
+
+
+
