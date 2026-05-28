@@ -1094,7 +1094,396 @@ and later connect it to the JWT system.
 
 
 
+===================================================================
+         +++++++++++++++++++++++++++++++++++++++++++
+===================================================================
 
+art-service generated and imported to intellij
+
+Excellent. Now we begin building the core business service of your platform.
+
+Step 1 — Configure art-service
+
+Open:
+
+art-service/src/main/resources/application.properties
+
+Replace everything with:
+
+spring.application.name=art-service
+
+server.port=8082
+
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka
+
+spring.datasource.url=jdbc:postgresql://localhost:5432/art_gallery_art_db
+spring.datasource.username=postgres
+spring.datasource.password=YOUR_POSTGRES_PASSWORD
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+
+Replace:
+
+YOUR_POSTGRES_PASSWORD
+
+with your actual password.
+
+Step 2 — Create Database
+
+In PostgreSQL:
+
+CREATE DATABASE art_gallery_art_db;
+Step 3 — Run art-service
+cd ~/Documents/art-gallery-microservices/art-service
+./mvnw spring-boot:run
+
+Then verify Eureka:
+
+http://localhost:8761
+
+You should now see:
+
+API-GATEWAY
+AUTH-SERVICE
+ART-SERVICE
+Step 4 — Create Artwork Entity
+
+Create package:
+
+com.artgallery.artservice.entity
+
+Create:
+
+Artwork.java
+package com.artgallery.artservice.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "artworks")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Artwork {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String title;
+
+    @Column(length = 2000)
+    private String description;
+
+    private String artistName;
+
+    private BigDecimal price;
+
+    private String imageUrl;
+
+    private String category;
+
+    private Boolean available;
+
+    private LocalDateTime createdAt;
+}
+Step 5 — Create Repository
+
+Create package:
+
+com.artgallery.artservice.repository
+
+Create:
+
+ArtworkRepository.java
+package com.artgallery.artservice.repository;
+
+import com.artgallery.artservice.entity.Artwork;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface ArtworkRepository extends JpaRepository<Artwork, Long> {
+}
+Step 6 — Run Again
+
+Restart art-service.
+
+Hibernate should automatically create:
+
+artworks
+
+table inside PostgreSQL.
+
+Once done, tell me:
+
+DONE
+
+Then we build:
+
+Create artwork API
+Get all artworks API
+Admin-only upload
+JWT protection
+
+
+
+Question:
+How can we see art-service in eureka when we had not write the @EnableEureka in the main class?
+
+Because @EnableEurekaServer is only needed for the server:
+
+discovery-server
+
+For other services like:
+
+api-gateway
+auth-service
+art-service
+
+they are Eureka clients, not Eureka servers.
+
+In Spring Boot/Spring Cloud, once you add this dependency:
+
+spring-cloud-starter-netflix-eureka-client
+
+and configure:
+
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka
+
+the service automatically registers itself with Eureka.
+
+So:
+
+@EnableEurekaServer
+
+is for the service registry itself.
+
+The client services do not need:
+
+@EnableEurekaClient
+
+anymore in most modern Spring Cloud versions. Spring Boot auto-configuration handles it.
+
+
+
+==================================================================
+
+===================================================================
+
+art_gallery_art_db=# \dt
+            List of tables
+ Schema |   Name   | Type  |  Owner
+--------+----------+-------+----------
+ public | artworks | table | postgres
+(1 row)
+
+
+art_gallery_art_db=#
+
+Perfect.
+
+That confirms Hibernate successfully created the table from your entity:
+
+Artwork.java  →  artworks table
+
+This means:
+
+PostgreSQL connection ✅
+JPA/Hibernate ✅
+Entity mapping ✅
+Auto table creation ✅
+art-service registration ✅
+
+Now we build the actual business APIs.
+
+Next — Create Artwork API
+
+We will build:
+
+POST /api/artworks
+GET  /api/artworks
+GET  /api/artworks/{id}
+DELETE /api/artworks/{id}
+
+Then later:
+
+JWT protection
+ADMIN role restriction
+Image uploads
+Step 1 — Create DTO Package
+
+Create:
+
+com.artgallery.artservice.dto
+
+Create:
+
+ArtworkRequest.java
+package com.artgallery.artservice.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+
+import java.math.BigDecimal;
+
+@Data
+public class ArtworkRequest {
+
+    @NotBlank
+    private String title;
+
+    private String description;
+
+    @NotBlank
+    private String artistName;
+
+    @NotNull
+    private BigDecimal price;
+
+    private String imageUrl;
+
+    private String category;
+}
+Step 2 — Create Service Package
+
+Create:
+
+com.artgallery.artservice.service
+
+Create:
+
+ArtworkService.java
+package com.artgallery.artservice.service;
+
+import com.artgallery.artservice.dto.ArtworkRequest;
+import com.artgallery.artservice.entity.Artwork;
+import com.artgallery.artservice.repository.ArtworkRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class ArtworkService {
+
+    private final ArtworkRepository artworkRepository;
+
+    public Artwork createArtwork(ArtworkRequest request) {
+
+        Artwork artwork = Artwork.builder()
+                .title(request.getTitle())
+                .description(request.getDescription())
+                .artistName(request.getArtistName())
+                .price(request.getPrice())
+                .imageUrl(request.getImageUrl())
+                .category(request.getCategory())
+                .available(true)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        return artworkRepository.save(artwork);
+    }
+
+    public List<Artwork> getAllArtworks() {
+        return artworkRepository.findAll();
+    }
+
+    public Artwork getArtworkById(Long id) {
+        return artworkRepository.findById(id)
+                .orElseThrow(() ->
+                        new RuntimeException("Artwork not found"));
+    }
+
+    public void deleteArtwork(Long id) {
+        artworkRepository.deleteById(id);
+    }
+}
+Step 3 — Create Controller Package
+
+Create:
+
+com.artgallery.artservice.controller
+
+Create:
+
+ArtworkController.java
+package com.artgallery.artservice.controller;
+
+import com.artgallery.artservice.dto.ArtworkRequest;
+import com.artgallery.artservice.entity.Artwork;
+import com.artgallery.artservice.service.ArtworkService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/artworks")
+@RequiredArgsConstructor
+public class ArtworkController {
+
+    private final ArtworkService artworkService;
+
+    @PostMapping
+    public Artwork createArtwork(
+            @Valid @RequestBody ArtworkRequest request) {
+
+        return artworkService.createArtwork(request);
+    }
+
+    @GetMapping
+    public List<Artwork> getAllArtworks() {
+        return artworkService.getAllArtworks();
+    }
+
+    @GetMapping("/{id}")
+    public Artwork getArtworkById(@PathVariable Long id) {
+        return artworkService.getArtworkById(id);
+    }
+
+    @DeleteMapping("/{id}")
+    public String deleteArtwork(@PathVariable Long id) {
+
+        artworkService.deleteArtwork(id);
+
+        return "Artwork deleted successfully";
+    }
+}
+Step 4 — Test Create Artwork
+
+POST:
+
+http://localhost:8082/api/artworks
+
+Body:
+
+{
+  "title": "Sunset Glory",
+  "description": "Beautiful sunset acrylic painting",
+  "artistName": "Gusto Eko",
+  "price": 250.00,
+  "imageUrl": "https://example.com/sunset.jpg",
+  "category": "Landscape"
+}
+
+Expected:
+
+{
+  "id": 1,
+  ...
+}
 
 
 
