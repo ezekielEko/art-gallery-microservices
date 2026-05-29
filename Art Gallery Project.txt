@@ -1549,6 +1549,562 @@ If that works, test:
 POST http://localhost:8080/api/artworks
 
 with the same JSON body.
+------------------------------------------------------------------------------------
+
+are we going to fix this later?
+
+Yes, absolutely. We should fix it later, and because this is a real project you intend to launch, we should fix it the right way.
+
+Right now we are using:
+
+.before(uri("http://localhost:8082"))
+
+which is called static routing.
+
+That is fine during development because:
+
+One art-service instance
+One auth-service instance
+Everything runs on your laptop
+
+But in production we want:
+
+.before(uri("lb://ART-SERVICE"))
+
+which uses:
+
+Eureka Service Discovery
+Load Balancing
+Multiple service instances
+High Availability
+Why did lb:// fail?
+
+Most likely because Spring Cloud Gateway MVC requires an additional configuration for load-balanced routing.
+
+We need to investigate:
+
+Spring Boot 4.0.6
+Spring Cloud 2025.1.1
+Gateway MVC
+
+specifically.
+
+My recommendation
+
+Don't stop the project now to chase that issue.
+
+We have already successfully built:
+
+Discovery Server
+API Gateway
+Auth Service
+JWT Authentication
+Art Service
+Artwork CRUD
+Gateway Routing
+PostgreSQL Integration
+
+The business value is in continuing.
+
+What I would do
+Continue building:
+Cart Service
+Order Service
+Angular Frontend
+Image Uploads
+Admin Dashboard
+
+using:
+
+http://localhost:8081
+http://localhost:8082
+
+behind the gateway.
+
+Then later
+
+Create a dedicated task:
+
+Gateway Production Hardening
+
+and implement:
+
+lb://AUTH-SERVICE
+lb://ART-SERVICE
+lb://CART-SERVICE
+lb://ORDER-SERVICE
+
+with proper service discovery and load balancing.
+
+This is exactly how many real projects evolve: get the business functionality working first, then improve infrastructure.
+
+At this point, your art gallery already has the foundation of a real e-commerce backend. The next feature that will make the project feel much more real is image uploads (uploading your actual paintings) or Cart Service (allowing customers to buy them). I would prioritize Cart Service first because it completes the customer purchase flow.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+=============================================================================================
+=============================================================================================
+
+
+Next we protect art-service properly.
+
+Goal
+GET /api/artworks       public
+GET /api/artworks/{id}  public
+POST /api/artworks      ADMIN only
+DELETE /api/artworks/{id} ADMIN only
+Step 1 — Copy JWT classes into art-service
+
+From auth-service, copy these two files into art-service:
+
+security/JwtService.java
+security/JwtAuthenticationFilter.java
+
+But in JwtAuthenticationFilter, remove database lookup for now. Use this simpler version:
+
+package com.artgallery.artservice.security;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.lang.NonNull;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.util.List;
+
+@Component
+@RequiredArgsConstructor
+public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private final JwtService jwtService;
+
+    @Override
+    protected void doFilterInternal(
+            @NonNull HttpServletRequest request,
+            @NonNull HttpServletResponse response,
+            @NonNull FilterChain filterChain
+    ) throws ServletException, IOException {
+
+        String authHeader = request.getHeader("Authorization");
+
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        String token = authHeader.substring(7);
+        String email = jwtService.extractEmail(token);
+
+        if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            UsernamePasswordAuthenticationToken authToken =
+                    new UsernamePasswordAuthenticationToken(
+                            email,
+                            null,
+                            List.of(new SimpleGrantedAuthority("ROLE_USER"))
+                    );
+
+            SecurityContextHolder.getContext().setAuthentication(authToken);
+        }
+
+        filterChain.doFilter(request, response);
+    }
+}
+Step 2 — Add JWT dependencies to art-service/pom.xml
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-api</artifactId>
+    <version>0.12.5</version>
+</dependency>
+
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-impl</artifactId>
+    <version>0.12.5</version>
+    <scope>runtime</scope>
+</dependency>
+
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-jackson</artifactId>
+    <version>0.12.5</version>
+    <scope>runtime</scope>
+</dependency>
+Step 3 — Update art-service SecurityConfig
+package com.artgallery.artservice.config;
+
+import com.artgallery.artservice.security.JwtAuthenticationFilter;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+@Configuration
+@RequiredArgsConstructor
+public class SecurityConfig {
+
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
+        http
+                .csrf(csrf -> csrf.disable())
+                .httpBasic(httpBasic -> httpBasic.disable())
+                .formLogin(formLogin -> formLogin.disable())
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/api/artworks/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/artworks/**").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/artworks/**").authenticated()
+                        .anyRequest().authenticated()
+                )
+                .addFilterBefore(
+                        jwtAuthenticationFilter,
+                        UsernamePasswordAuthenticationFilter.class
+                );
+
+        return http.build();
+    }
+}
+
+For now, POST/DELETE require a valid JWT. Later we’ll upgrade this to true ADMIN role only.
+
+
+
+
+
+================================================================
+                                 TEST
+================================================================
+
+Now test that art-service security works.
+
+1. Restart art-service
+cd ~/Documents/art-gallery-microservices/art-service
+./mvnw clean spring-boot:run
+2. Test public GET
+
+This should still work without token:
+
+GET http://localhost:8082/api/artworks
+3. Test protected POST without token
+
+This should fail with 401 or 403:
+
+POST http://localhost:8082/api/artworks
+4. Test protected POST with token
+
+First login again:
+
+POST http://localhost:8081/api/auth/login
+
+Copy the token.
+
+Then in Postman for:
+
+POST http://localhost:8082/api/artworks
+
+Go to:
+
+Authorization → Type: Bearer Token
+
+Paste the token.
+
+Then send the artwork JSON again.
+
+Expected result:
+
+200 OK
+
+This confirms art-service accepts JWT from auth-service.  
+-----------------------------------------------------------------------------
+2026-05-29T13:48:30.876-05:00  INFO 33888 --- [art-service] [           main] c.a.artservice.ArtServiceApplication     : Started ArtServiceApplication in 5.802 seconds (process running for 6.354)
+2026-05-29T13:49:40.087-05:00  INFO 33888 --- [art-service] [nio-8082-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-05-29T13:49:40.088-05:00  INFO 33888 --- [art-service] [nio-8082-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-05-29T13:49:40.093-05:00  INFO 33888 --- [art-service] [nio-8082-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 4 ms
+2026-05-29T13:49:40.279-05:00  WARN 33888 --- [art-service] [nio-8082-exec-1] .w.s.m.s.DefaultHandlerExceptionResolver : Resolved [org.springframework.http.converter.HttpMessageNotReadableException: Required request body is missing: public com.artgallery.artservice.entity.Artwork com.artgallery.artservice.controller.ArtworkController.createArtwork(com.artgallery.artservice.dto.ArtworkRequest)]
+
+
+Good news: this log means the token/security part likely passed.
+
+This error is different:
+
+Required request body is missing
+
+That means your POST request reached the controller, but Postman did not send the JSON body.
+
+In Postman, check this:
+
+Go to Body
+Select raw
+Select JSON
+Paste the artwork JSON again:
+{
+  "title": "Sunset Glory",
+  "description": "Beautiful sunset acrylic painting",
+  "artistName": "Ekosser",
+  "price": 2500.00,
+  "imageUrl": "https://example.com/sunset.jpg",
+  "category": "Landscape"
+}
+
+Also make sure the request is:
+
+POST http://localhost:8082/api/artworks
+
+and Authorization is:
+
+Bearer Token
+
+Then send again. You should now get 200 OK.
+
+Excellent! 🎉
+
+This is a major milestone.
+
+Your response proves:
+
+JWT Authentication Filter ✅
+Bearer Token Processing ✅
+Token Validation ✅
+Protected Endpoint Security ✅
+Artwork Creation API ✅
+PostgreSQL Persistence ✅
+
+Notice:
+
+"id": 2
+
+This means a new record was successfully inserted into the database after authentication.
+
+So now your system behaves like a real application:
+
+Public User
+
+Can:
+
+GET /api/artworks
+GET /api/artworks/{id}
+Authenticated User
+
+Can:
+
+POST /api/artworks
+What we learned
+
+Remember this debugging lesson:
+
+403 Forbidden
+
+Usually means:
+
+Security blocked the request
+Missing token
+Invalid token
+Missing role
+Required request body is missing
+
+Means:
+
+Request reached the controller
+Security passed
+But JSON body wasn't sent
+
+That's exactly what happened here.
+
+Next Phase: Image Uploads
+
+Right now you store:
+
+"imageUrl": "https://example.com/sunset.jpg"
+
+But your real business goal is:
+
+Upload your actual painting photo
+Store image
+Display image on website
+Sell artwork
+
+So the next feature should be:  Artwork Image Upload Service
+
+We will implement:
+    POST /api/artworks/upload
+
+Accept:
+
+Multipart image file
+
+Store locally first:
+
+/art-gallery-images
+
+Return:
+
+{
+  "imageUrl": "/images/painting1.jpg"
+}
+
+Then later we can upgrade to:
+
+AWS S3
+Cloudinary
+Azure Blob Storage
+
+for production.
+
+This is the next step that will make your Art Gallery 
+start looking like a real online store instead of just an API.
+
+===========================================================================
+Next we add image upload to art-service.
+
+Step 1 — Add upload folder config
+
+In art-service/application.properties, add:
+
+app.upload.dir=uploads/artworks
+Step 2 — Create ImageUploadService
+
+Package:
+
+com.artgallery.artservice.service
+
+Create:
+
+package com.artgallery.artservice.service;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.nio.file.*;
+import java.util.UUID;
+
+@Service
+public class ImageUploadService {
+
+    @Value("${app.upload.dir}")
+    private String uploadDir;
+
+    public String uploadImage(MultipartFile file) throws IOException {
+
+        Path uploadPath = Paths.get(uploadDir);
+
+        if (!Files.exists(uploadPath)) {
+            Files.createDirectories(uploadPath);
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        String fileExtension = "";
+
+        if (originalFilename != null && originalFilename.contains(".")) {
+            fileExtension = originalFilename.substring(originalFilename.lastIndexOf("."));
+        }
+
+        String newFileName = UUID.randomUUID() + fileExtension;
+
+        Path filePath = uploadPath.resolve(newFileName);
+
+        Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+
+        return "/images/artworks/" + newFileName;
+    }
+}
+Step 3 — Add upload endpoint
+
+In ArtworkController, inject:
+
+private final ImageUploadService imageUploadService;
+
+Then add this endpoint:
+
+@PostMapping("/upload")
+public String uploadArtworkImage(@RequestParam("file") MultipartFile file) throws IOException {
+    return imageUploadService.uploadImage(file);
+}
+
+Add imports:
+
+import com.artgallery.artservice.service.ImageUploadService;
+import org.springframework.web.multipart.MultipartFile;
+import java.io.IOException;
+Step 4 — Test in Postman
+
+Use:
+
+POST http://localhost:8082/api/artworks/upload
+
+Authorization:
+
+Bearer Token
+
+Body:
+
+form-data
+Key: file
+Type: File
+Value: choose image from your computer
+
+Expected response:
+
+/images/artworks/generated-file-name.jpg
+
+
+
+
+Excellent — image upload works.
+
+You now have:
+
+Multipart upload ✅
+File saved locally ✅
+Generated unique filename ✅
+Image URL returned ✅
+
+Now commit this milestone:
+
+cd ~/Documents/art-gallery-microservices
+git add .; git commit -m "Add artwork image upload"; git push
+
+Next we’ll make this returned URL actually accessible in the browser:
+
+http://localhost:8082/images/artworks/<filename>.jpg
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
