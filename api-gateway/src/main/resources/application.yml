@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      mvc:
+        routes:
+          - id: auth-service
+            uri: lb://AUTH-SERVICE
+            predicates:
+              - Path=/api/auth/**
+
+          - id: art-service
+            uri: lb://ART-SERVICE
+            predicates:
+              - Path=/api/artworks/**
+
+server:
+  port: 8080
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka

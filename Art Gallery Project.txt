@@ -1486,5 +1486,70 @@ Expected:
 }
 
 
+TEST
+GET http://localhost:8082/api/artworks
+
+You should see a list with your artwork.
+
+Then commit:
+
+cd ~/Documents/art-gallery-microservices
+git add .
+git commit -m "Add artwork creation and listing"
+git push
+
+Next we’ll connect art-service through the API Gateway, so instead of calling port 8082, you’ll call through port 8080.
+
+
+============================================================================================================================================================
+============================================================================================================================================================
+
+
+
+Next we route art-service through api-gateway.
+
+1. Open api-gateway/application.properties
+
+Add this route configuration:
+
+spring.cloud.gateway.server.webflux.routes[0].id=auth-service
+spring.cloud.gateway.server.webflux.routes[0].uri=lb://AUTH-SERVICE
+spring.cloud.gateway.server.webflux.routes[0].predicates[0]=Path=/api/auth/**
+
+spring.cloud.gateway.server.webflux.routes[1].id=art-service
+spring.cloud.gateway.server.webflux.routes[1].uri=lb://ART-SERVICE
+spring.cloud.gateway.server.webflux.routes[1].predicates[0]=Path=/api/artworks/**
+
+Keep your existing Eureka config.
+
+2. Restart services
+
+Restart in this order:
+
+discovery-server
+api-gateway
+auth-service
+art-service
+3. Test through gateway
+
+Instead of:
+
+http://localhost:8082/api/artworks
+
+Use:
+
+http://localhost:8080/api/artworks
+
+Test:
+
+GET http://localhost:8080/api/artworks
+
+If that works, test:
+
+POST http://localhost:8080/api/artworks
+
+with the same JSON body.
+
+
 
 
